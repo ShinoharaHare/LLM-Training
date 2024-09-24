@@ -72,7 +72,15 @@ def main(
     print('Saving model')
     hf_model.to(dtype).save_pretrained(output_dir)
     
-    if isinstance(datamodule, (PreTrainingDataModule, InstructionTuningDataModule, PreferenceTuningDataModule)):
+    if isinstance(
+        datamodule,
+        (
+            PreTrainingDataModule,
+            InstructionTuningDataModule,
+            PreferenceTuningDataModule,
+            VisualInstructionTuningDataModule
+        )
+    ):
         print('Saving tokenizer')
         tokenizer = datamodule.config.tokenizer
         tokenizer.model_max_length = max(tokenizer.model_max_length, datamodule.config.max_length)
@@ -80,6 +88,11 @@ def main(
         if chat_template is not None:
             tokenizer.chat_template = chat_template
         tokenizer.save_pretrained(output_dir)
+    
+    if isinstance(datamodule, VisualInstructionTuningDataModule):
+        print('Saving image processor')
+        image_processor = datamodule.config.image_processor
+        image_processor.save_pretrained(output_dir)
 
 
 def convert_checkpoint(path: Path) -> dict[str, Any]:

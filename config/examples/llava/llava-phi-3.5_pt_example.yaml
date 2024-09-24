@@ -1,0 +1,74 @@
+seed_everything: 42
+float32_matmul_precision: medium
+logging_level: DEBUG
+
+trainer:
+  strategy: 
+    class_path: llm_training.overrides.DeepSpeedStrategy
+    init_args:
+      stage: 2
+      exclude_frozen_parameters: true
+  precision: bf16-true
+  logger:
+    class_path: llm_training.overrides.wandb.WandbLogger
+    init_args:
+      name: llava-phi-3.5_pt_example
+      job_type: example
+      project: llm-training
+      save_dir: logs
+      save_code: true
+  max_epochs: 1
+  val_check_interval: null
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  callbacks:
+    - class_path: LearningRateMonitor
+    - class_path: llm_training.overrides.ModelCheckpoint
+      init_args:
+        save_on_train_epoch_end: true
+        save_top_k: 1
+
+model:
+  class_path: llm_training.lms.CLM
+  init_args.config:
+    model:
+      model_class: llm_training.models.HFLlava
+      model_config:
+        hf_path: ShinoharaHare/llava-phi-3.5-mini-instruct_untrained
+        torch_dtype: bfloat16
+        attn_implementation: flash_attention_2
+        enable_gradient_checkpointing: true
+    
+    frozen_modules:
+      - vision_tower$
+      - language_model$
+    
+    # neftune_alpha: 5.0
+
+    optim:
+      optimizer_class: deepspeed.ops.adam.FusedAdam
+      optimizer_kwargs:
+        lr: 1e-3
+      lr_scheduler_kwargs:
+        num_warmup_steps: 100
+
+data:
+  class_path: llm_training.data.VisualInstructionTuningDataModule
+  init_args.config:
+    dataset_kwargs:
+      path: ShinoharaHare/LLaVA-NeXT-Data-Reformatted
+      name: 10K
+    tokenizer:
+      class_path: HFTokenizer
+      init_args.path: ShinoharaHare/llava-phi-3.5-mini-instruct_untrained
+    chat_template: phi-3
+    image_processor:
+      class_path: HFImageProcessor
+      init_args.path: ShinoharaHare/llava-phi-3.5-mini-instruct_untrained
+    batch_size: 1
+    max_length: 4096
+    pad_to_multiple_of: 64
+    validation_split: null
+    num_proc: 4
+    num_workers: 4
+    enable_cache: true

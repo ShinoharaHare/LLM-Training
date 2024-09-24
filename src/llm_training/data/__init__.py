@@ -5,3 +5,4 @@ from .dummy import *
 from .instruction_tuning import *
 from .pre_training import *
 from .preference_tuning import *
+from .visual_instruction_tuning import *

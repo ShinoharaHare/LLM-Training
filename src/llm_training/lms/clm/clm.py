@@ -91,17 +91,34 @@ class CLM(BaseLightningModule):
             reduction='mean'
         )
 
-    def training_step(self, batch: dict[str, torch.Tensor | Any], batch_idx: int) -> torch.Tensor:
-        labels = shift_labels(batch['labels'], self.config.ignore_index)
+    def forward_batch(self, batch: dict[str, torch.Tensor | Any]) -> tuple[torch.Tensor, torch.Tensor]:
+        kwargs = dict(
+            input_ids=batch['input_ids'],
+            attention_mask=batch['attention_mask']
+        )
 
+        if 'position_ids' in batch:
+            kwargs['position_ids'] = batch['position_ids']
+
+        labels = batch['labels']
+        if 'pixel_values' in batch:
+            kwargs['labels'] = labels
+            kwargs['pixel_values'] = batch['pixel_values']
+            attention_mask, labels, logits = self.model(**kwargs)
+            attention_mask = shift_labels(attention_mask, 0)
+            labels = shift_labels(labels, self.config.ignore_index)
+            labels[attention_mask == 0] = self.config.ignore_index
+        else:
+            logits = self.model(**kwargs)
+            labels = shift_labels(labels, self.config.ignore_index)
+
+        return logits, labels
+
+    def training_step(self, batch: dict[str, torch.Tensor | Any], batch_idx: int) -> torch.Tensor:
         if self.config.neftune_alpha is not None:
             self._current_attention_mask = batch['attention_mask']
 
-        logits = self.model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            position_ids=batch.get('position_ids', None)
-        )
+        logits, labels = self.forward_batch(batch)
 
         if self.config.neftune_alpha is not None:
             self.log('NEFTune Alpha', self.config.neftune_alpha)
@@ -128,12 +145,7 @@ class CLM(BaseLightningModule):
 
     def validation_step(self, batch: dict[str, torch.Tensor | Any], batch_idx: int, dataloader_idx: int = 0):
         batch_size = batch['input_ids'].size(0)
-        labels = shift_labels(batch['labels'], self.config.ignore_index)
-        logits = self.model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            position_ids=batch.get('position_ids', None)
-        )
+        logits, labels = self.forward_batch(batch)
 
         self.val_perplexity.update(logits, labels)
         loss = self.compute_loss(logits, labels)
