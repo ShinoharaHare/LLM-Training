@@ -12,6 +12,7 @@ from lightning.pytorch.utilities import GradClipAlgorithmType
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
 from lightning_utilities import apply_to_collection
 from torch.distributed._composable.fsdp import MixedPrecisionPolicy
+from torch.distributed.tensor import DTensor
 from torch.optim import LBFGS, Optimizer
 from typing_extensions import get_args, override
 
@@ -152,7 +153,8 @@ class FSDP2Precision(Precision):
     @override
     def clip_grad_by_norm(self, optimizer, clip_val):
         parameters = self.main_params(optimizer)
-        self._grad_norm = torch.nn.utils.clip_grad_norm_(parameters, clip_val)
+        grad_norm = torch.nn.utils.clip_grad_norm_(parameters, clip_val)
+        self._grad_norm = grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm        
     
     @override
     def clip_gradients(
