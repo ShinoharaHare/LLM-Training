@@ -161,8 +161,7 @@ class CLM(BaseLightningModule):
         if batch_idx % self.trainer.accumulate_grad_batches == 0:
             batches = self.get_next_batches(
                 batch,
-                min(
-                    self.trainer.accumulate_grad_batches, self.trainer.num_training_batches - batch_idx)
+                min(self.trainer.accumulate_grad_batches, self.trainer.num_training_batches - batch_idx)
             )
             num_tokens_in_batch = sum([
                 x['labels'].ne(self.config.ignore_index).sum() for x in batches
@@ -188,7 +187,7 @@ class CLM(BaseLightningModule):
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
-            position_ids=batch.get('position_ids', None)
+            position_ids=batch['position_ids']
         )
         logits = outputs.logits.float()
 
@@ -199,7 +198,11 @@ class CLM(BaseLightningModule):
         loss = self.compute_loss(logits, labels, self.get_num_tokens_in_batch(batch, batch_idx))
 
         self.loss_metric.update(loss)
-        if not self.trainer.fit_loop._should_accumulate():
+        epoch_loop = self.trainer.fit_loop.epoch_loop
+        if (
+            epoch_loop._accumulated_batches_reached()
+            or epoch_loop._num_ready_batches_reached()
+        ):
             reduced_loss = self.loss_metric.compute()
             self.loss_metric.reset()
             self.log('loss', reduced_loss, prog_bar=True, logger=False)
