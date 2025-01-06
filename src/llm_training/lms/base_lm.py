@@ -9,7 +9,6 @@ import safetensors.torch
 import torch
 import torch.distributed
 import torch.utils.checkpoint
-from accelerate import init_empty_weights
 from lightning import LightningModule, Trainer
 from lightning.pytorch.core.optimizer import LightningOptimizer
 from lightning.pytorch.strategies import Strategy
@@ -20,6 +19,7 @@ from tqdm.auto import tqdm
 
 from llm_training.lightning import DeepSpeedStrategy, FSDP2Strategy
 from llm_training.models.base_model.base_model import BaseModel
+from llm_training.models.utils import init_empty_weights
 from llm_training.utils.context_managers import ContextManagers
 
 from .base_lm_config import BaseLightningModuleConfig
@@ -144,6 +144,19 @@ class BaseLightningModule(LightningModule):
                 progress_bar.set_postfix_str(n)
                 progress_bar.update()
 
+    def _get_shared_weight_names(self) -> list[tuple[bool, str, str]]:
+        named_weights = [(False, n, p) for n, p in self.named_parameters(remove_duplicate=False)]
+        named_weights += [(True, n, b) for n, b in self.named_buffers(remove_duplicate=False)]
+
+        memo = {}
+        shared_weights = []
+        for is_buffer, n, w in named_weights:
+            if w in memo:
+                shared_weights.append((is_buffer, n, memo[w]))
+            else:
+                memo[w] = n
+        return shared_weights
+
     def _fsdp2_load_state_dict(self, state_dict: dict[str, torch.Tensor] | None):
         device = self.strategy.root_device
         for m in self.modules():
@@ -152,6 +165,15 @@ class BaseLightningModule(LightningModule):
                 or any(t.is_meta for t in m.buffers(recurse=False))
             ):
                 m.to_empty(device=device, recurse=False)
+        
+        # after materializing, re-share the weights that were supposed to be shared.
+        for is_buffer, k, v in self._shared_weight_names:
+            mn, _, wn = k.rpartition('.')
+            m = self.get_submodule(mn)
+            if is_buffer:
+                m.register_buffer(wn, self.get_buffer(v))
+            else:
+                m.register_parameter(wn, self.get_parameter(v))
 
         with self._get_weight_loading_progress_bar() as progress_bar:
             for n, p in self.named_parameters():
@@ -214,6 +236,8 @@ class BaseLightningModule(LightningModule):
                         break
 
         if isinstance(self.strategy, FSDP2Strategy):
+            # obtain shared weights before parallelizing, or they may no longer be shared.
+            self._shared_weight_names = self._get_shared_weight_names()
             self.on_fsdp_parallelize_model(
                 dp_mesh=self.strategy.dp_mesh,
                 tp_mesh=self.strategy.tp_mesh,
