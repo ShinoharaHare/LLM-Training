@@ -55,18 +55,30 @@ class FSDP2Precision(Precision):
     @property
     def mp_policy(self) -> "MixedPrecisionPolicy":
         if self.precision == '16-mixed':
-            param_dtype = torch.float32
-            reduce_dtype = output_dtype = torch.float16
+            param_dtype = torch.float
+            reduce_dtype = torch.half
+            output_dtype = torch.half
+            cast_forward_inputs = False
         elif self.precision == 'bf16-mixed':
-            param_dtype = torch.float32
-            reduce_dtype = output_dtype = torch.bfloat16
+            param_dtype = torch.float
+            reduce_dtype = torch.bfloat16
+            output_dtype = torch.bfloat16
+            cast_forward_inputs = False
         elif self.precision == '16-true':
-            param_dtype = reduce_dtype = output_dtype = torch.float16
+            param_dtype = torch.half
+            reduce_dtype = torch.half
+            output_dtype = torch.half
+            cast_forward_inputs = False
         elif self.precision == 'bf16-true':
-            param_dtype = reduce_dtype = output_dtype = torch.bfloat16
+            param_dtype = torch.bfloat16
+            reduce_dtype = torch.bfloat16
+            output_dtype = torch.bfloat16
+            cast_forward_inputs = False
         elif self.precision == '32-true':
-            param_dtype = torch.float32
-            reduce_dtype = output_dtype = torch.float32
+            param_dtype = torch.float
+            reduce_dtype = torch.float
+            output_dtype = torch.float
+            cast_forward_inputs = False
         else:
             raise MisconfigurationException(f"Was unable to infer precision type, received {self.precision!r}.")
 
@@ -74,7 +86,7 @@ class FSDP2Precision(Precision):
             param_dtype=param_dtype,
             reduce_dtype=reduce_dtype,
             output_dtype=output_dtype,
-            cast_forward_inputs=True
+            cast_forward_inputs=cast_forward_inputs
         )
     
     @override

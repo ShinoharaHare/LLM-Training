@@ -39,6 +39,8 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.optim import Optimizer
 from typing_extensions import override
 
+from llm_training.optim.master_weight_wrapper import MasterWeightsOptimizer
+
 from .fsdp2_precision import FSDP2Precision
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,8 @@ class FSDP2Strategy(ParallelStrategy):
         timeout: Optional[timedelta] = datetime.timedelta(minutes=30),
         reshard_after_forward: bool | int = True,
         mp_policy: MixedPrecisionPolicy | None = None,
-        offload_policy: OffloadPolicy = OffloadPolicy()
+        offload_policy: OffloadPolicy = OffloadPolicy(),
+        use_master_weights: bool = True
     ) -> None:
         super().__init__()
 
@@ -71,6 +74,8 @@ class FSDP2Strategy(ParallelStrategy):
         self._reshard_after_forward = reshard_after_forward
         self._mp_policy = mp_policy
         self._offload_policy = offload_policy
+        
+        self._use_master_weights = use_master_weights
 
     @property
     @override
@@ -239,7 +244,10 @@ class FSDP2Strategy(ParallelStrategy):
         # and subsequent checkpoint saving can fail
         self._reset_optimizers_and_schedulers()
 
-        return super().setup_optimizers(trainer)
+        super().setup_optimizers(trainer)
+
+        if self.mp_policy.param_dtype in (torch.half, torch.bfloat16) and self._use_master_weights:
+            self.optimizers = [MasterWeightsOptimizer(optimizer) for optimizer in self.optimizers]
 
     @override
     def model_to_device(self) -> None:

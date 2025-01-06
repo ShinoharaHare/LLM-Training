@@ -144,44 +144,19 @@ class BaseLightningModule(LightningModule):
                 progress_bar.set_postfix_str(n)
                 progress_bar.update()
 
-    def _get_shared_weight_names(self) -> list[tuple[bool, str, str]]:
-        named_weights = [(False, n, p) for n, p in self.named_parameters(remove_duplicate=False)]
-        named_weights += [(True, n, b) for n, b in self.named_buffers(remove_duplicate=False)]
-
-        memo = {}
-        shared_weights = []
-        for is_buffer, n, w in named_weights:
-            if w in memo:
-                shared_weights.append((is_buffer, n, memo[w]))
-            else:
-                memo[w] = n
-        return shared_weights
-
     def _fsdp2_load_state_dict(self, state_dict: dict[str, torch.Tensor] | None):
-        device = self.strategy.root_device
-        for m in self.modules():
-            if (
-                any(t.is_meta for t in m.parameters(recurse=False))
-                or any(t.is_meta for t in m.buffers(recurse=False))
-            ):
-                m.to_empty(device=device, recurse=False)
-        
-        # after materializing, re-share the weights that were supposed to be shared.
-        for is_buffer, k, v in self._shared_weight_names:
-            mn, _, wn = k.rpartition('.')
-            m = self.get_submodule(mn)
-            if is_buffer:
-                m.register_buffer(wn, self.get_buffer(v))
-            else:
-                m.register_parameter(wn, self.get_parameter(v))
-
         with self._get_weight_loading_progress_bar() as progress_bar:
             for n, p in self.named_parameters():
                 if isinstance(p, DTensor):
-                    w = (
-                        state_dict[n] if self.global_rank == 0
-                        else torch.empty(p.shape, dtype=p.dtype, device=device)
+                    w = torch.empty(
+                        p.shape,
+                        dtype=p.dtype,
+                        device=self.strategy.root_device
                     )
+
+                    if self.global_rank == 0:
+                        w.data.copy_(state_dict[n])
+
                     w = distribute_tensor(
                         w,
                         p.device_mesh,
@@ -225,6 +200,36 @@ class BaseLightningModule(LightningModule):
     def on_fsdp_parallelize_model(self, **kwargs) -> None:
         raise NotImplementedError()
 
+    @contextmanager
+    def fsdp_parallelize_context(self):
+        named_weights = [(False, n, p) for n, p in self.named_parameters(remove_duplicate=False)]
+        named_weights += [(True, n, b) for n, b in self.named_buffers(remove_duplicate=False)]
+
+        memo = {}
+        shared_weights = []
+        for is_buffer, n, w in named_weights:
+            if w in memo:
+                shared_weights.append((is_buffer, n, memo[w]))
+            else:
+                memo[w] = n
+
+        yield
+
+        for m in self.modules():
+            if (
+                any(t.is_meta for t in m.parameters(recurse=False))
+                or any(t.is_meta for t in m.buffers(recurse=False))
+            ):
+                m.to_empty(device=self.strategy.root_device, recurse=False)
+
+        for is_buffer, k, v in shared_weights:
+            mn, _, wn = k.rpartition('.')
+            m = self.get_submodule(mn)
+            if is_buffer:
+                m.register_buffer(wn, self.get_buffer(v))
+            else:
+                m.register_parameter(wn, self.get_parameter(v))
+
     def on_after_configure_model(self) -> None:
         if self.config.frozen_modules is not None:
             for n, m in self.named_modules():
@@ -236,15 +241,14 @@ class BaseLightningModule(LightningModule):
                         break
 
         if isinstance(self.strategy, FSDP2Strategy):
-            # obtain shared weights before parallelizing, or they may no longer be shared.
-            self._shared_weight_names = self._get_shared_weight_names()
-            self.on_fsdp_parallelize_model(
-                dp_mesh=self.strategy.dp_mesh,
-                tp_mesh=self.strategy.tp_mesh,
-                reshard_after_forward=self.strategy.reshard_after_forward,
-                mp_policy=self.strategy.mp_policy,
-                offload_policy=self.strategy.offload_policy
-            )
+            with self.fsdp_parallelize_context():
+                self.on_fsdp_parallelize_model(
+                    dp_mesh=self.strategy.dp_mesh,
+                    tp_mesh=self.strategy.tp_mesh,
+                    reshard_after_forward=self.strategy.reshard_after_forward,
+                    mp_policy=self.strategy.mp_policy,
+                    offload_policy=self.strategy.offload_policy
+                )
         
         if self.should_load_pre_trained_weights:
             self.load_pre_trained_weights()
