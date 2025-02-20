@@ -166,7 +166,7 @@ class FSDP2Precision(Precision):
     def clip_grad_by_norm(self, optimizer, clip_val):
         parameters = self.main_params(optimizer)
         grad_norm = torch.nn.utils.clip_grad_norm_(parameters, clip_val)
-        self._grad_norm = grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm        
+        self._grad_norm = grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
     
     @override
     def clip_gradients(

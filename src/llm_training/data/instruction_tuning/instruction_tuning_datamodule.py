@@ -34,7 +34,7 @@ class InstructionTuningDataModule(HFBasedDataModule):
         tokenizer: PreTrainedTokenizerBase,
         chat_template: str | None,
         default_system_prompt: str | None,
-        add_default_system_prompt_rate: float | None 
+        add_default_system_prompt_rate: float | None
     ):
         new_batch = {
             'input_ids': [],

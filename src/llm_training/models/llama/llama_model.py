@@ -66,7 +66,7 @@ class Llama(HFCompatModel):
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()        
+                module.weight.data[module.padding_idx].zero_()
 
     def merge_hf_config(self, hf_config: HFLlamaConfig) -> None:
         assert hf_config.hidden_act == 'silu'
@@ -737,7 +737,7 @@ class LlamaSdpaAttention(LlamaAttention):
             key_states,
             value_states,
             attention_mask
-        )        
+        )
 
         attn_output = self.o_proj(attn_output)
 

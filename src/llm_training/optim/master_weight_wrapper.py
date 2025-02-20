@@ -28,7 +28,7 @@ class MasterWeightsOptimizer(Optimizer):
 
         return cls._subclasses[optimizer_class](optimizer)
 
-    def __init__(self, optimizer: Optimizer):        
+    def __init__(self, optimizer: Optimizer):
         self._optimizer = optimizer
         self._parameters = [p for g in self._optimizer.param_groups for p in g['params']]
         self._parameter_mapping = {}
@@ -60,7 +60,7 @@ class MasterWeightsOptimizer(Optimizer):
                 for mw in list(self._optimizer.state.keys()):
                     self._optimizer.state[self._parameter_mapping[mw]] = self._optimizer.state.pop(mw)
     
-    def step(self, closure=None):        
+    def step(self, closure=None):
         loss = None
         if closure is not None:
             with torch.enable_grad():

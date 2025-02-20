@@ -63,7 +63,7 @@ class LightningCLI(_LightningCLI):
 
     def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
         parser.add_argument('--float32-matmul-precision', type=str | None, choices=['medium', 'high', 'highest'], default=None)
-        parser.add_argument('--logging-level', type=str | int, default=logging.INFO)        
+        parser.add_argument('--logging-level', type=str | int, default=logging.INFO)
         parser.add_lightning_class_args(OutputRedirection, 'output_redirection')
         parser.add_lightning_class_args(TQDMProgressBar, 'tqdm_progress')
 

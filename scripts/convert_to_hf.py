@@ -113,7 +113,7 @@ def convert_checkpoint(path: Path) -> dict[str, Any]:
         path.is_dir()
         and path.joinpath('meta.pt').is_file()
         and len(list(path.glob('*.distcp'))) > 0
-    ):        
+    ):
         print('FSDP checkpoint detected')
         return convert_fsdp_checkpoint(path)
 
@@ -164,7 +164,7 @@ def convert_fsdp_checkpoint(path: Path) -> dict[str, Any]:
 def instantiate_model_and_datamodule(config: dict[str, Any]) -> tuple[LightningModule, LightningDataModule]:
     parser = LightningArgumentParser()
     parser.add_lightning_class_args(LightningModule, 'model', subclass_mode=True)
-    parser.add_lightning_class_args(LightningDataModule, 'data', subclass_mode=True)    
+    parser.add_lightning_class_args(LightningDataModule, 'data', subclass_mode=True)
     classes = parser.instantiate_classes({k: config[k] for k in ['model', 'data']})
     return classes['model'], classes['data']
 

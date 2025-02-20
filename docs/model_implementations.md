@@ -2,7 +2,7 @@
 
 ## Optimized Models
 
-`LLM-Training` has implemented several models that are more efficient compared to those in [Hugging Face](https://github.com/huggingface/transformers) and support additional features. 
+`LLM-Training` has implemented several models that are more efficient compared to those in [Hugging Face](https://github.com/huggingface/transformers) and support additional features.
 Therefore, it's recommended to prioritize using these models.
 
 The optimized models currently implemented:
@@ -25,7 +25,7 @@ The optimized models currently implemented:
 If you need to use a model implemented by Hugging Face, you can use [`HFCausalLM`](/src/llm_training/models/hf_causal_lm/hf_causal_lm.py).
 
 ```yaml
-... 
+...
 model:
   class_path: llm_training.lms.CLM # or other objective
   init_args.config:

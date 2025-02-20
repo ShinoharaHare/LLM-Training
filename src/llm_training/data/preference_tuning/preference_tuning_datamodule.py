@@ -146,5 +146,5 @@ class PreferenceTuningDataModule(HFBasedDataModule):
                 'rejected_length': Value('uint32')
             }),
             desc='Pre-processing data'
-        )    
+        )
         return dataset_dict

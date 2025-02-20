@@ -15,7 +15,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 class DeepSpeedStrategy(_DeepSpeedStrategy):
     def __init__(
-        self, 
+        self,
         accelerator: Accelerator | None = None,
         zero_optimization: bool = True,
         stage: int = 2,

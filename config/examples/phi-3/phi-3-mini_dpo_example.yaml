@@ -3,7 +3,7 @@ float32_matmul_precision: medium
 logging_level: DEBUG
 
 trainer:
-  strategy: 
+  strategy:
     class_path: llm_training.lightning.DeepSpeedStrategy
     init_args:
       stage: 2
