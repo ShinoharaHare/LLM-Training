@@ -1,6 +1,6 @@
 import logging
 from contextlib import nullcontext
-from typing import Any
+from typing import TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -11,8 +11,9 @@ from torch.distributed.tensor.parallel import loss_parallel
 from llm_training.lightning.strategy import FSDP2Strategy
 from llm_training.lms.base_lm import BaseLightningModule
 from llm_training.lms.protos import CausalLMProto
-from llm_training.lms.utils import get_model
-from llm_training.metrics import ConsumedSamples, ConsumedTokens, Perplexity
+from llm_training.lms.utils import DataFetcherProxy, get_model
+from llm_training.metrics import (ConsumedSamples, ConsumedTokens, Loss,
+                                  Perplexity)
 from llm_training.models.base_model.base_model import BaseModel
 from llm_training.ops import shift_labels
 from llm_training.ops.liger_kernel import cross_entropy
@@ -97,6 +98,8 @@ class CLM(BaseLightningModule):
                 ignore_index=self.config.ignore_index,
                 process_group=process_group
             )
+        
+        self.loss_metric = Loss(process_group=process_group)
 
         self.model = get_model(self.config.model)
 
@@ -110,20 +113,34 @@ class CLM(BaseLightningModule):
     def on_fsdp_parallelize_model(self, **kwargs) -> None:
         self.model.parallelize(**kwargs)
 
-    def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute_loss(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        num_tokens_in_batch: int | None = None
+    ) -> torch.Tensor:
+        reduction = 'mean' if num_tokens_in_batch is None else 'sum'
+
         if isinstance(self.strategy, FSDP2Strategy) and self.strategy.tp_size > 1:
             with loss_parallel():
-                return F.cross_entropy(
+                loss = F.cross_entropy(
                     logits.flatten(end_dim=1),
                     labels.flatten(end_dim=1),
-                    ignore_index=self.config.ignore_index
+                    ignore_index=self.config.ignore_index,
+                    reduction=reduction
                 )
+        else:
+            loss = cross_entropy(
+                logits=logits,
+                labels=labels,
+                ignore_index=self.config.ignore_index,
+                reduction=reduction
+            )
         
-        return cross_entropy(
-            logits=logits,
-            labels=labels,
-            ignore_index=self.config.ignore_index
-        )
+        if num_tokens_in_batch is not None:
+            loss /= num_tokens_in_batch / self.trainer.accumulate_grad_batches / self.trainer.world_size
+
+        return loss
 
     def backward(self, loss: torch.Tensor, *args, **kwargs) -> None:
         backward_ctx = nullcontext()
@@ -133,7 +150,35 @@ class CLM(BaseLightningModule):
         with backward_ctx:
             super().backward(loss, *args, **kwargs)
 
-    def training_step(self, batch: dict[str, torch.Tensor | Any], batch_idx: int) -> torch.Tensor:
+    def get_next_batches(self, batch: "_Batch", n: int) -> list["_Batch"]:
+        batches = []
+        if n > 0:
+            batches.append(batch)
+            batches += [x[0] for x in self.data_fetcher.prefetch(n - 1)]
+        return batches
+    
+    def get_num_tokens_in_batch(self, batch: "_Batch", batch_idx: int) -> int | None:
+        if batch_idx % self.trainer.accumulate_grad_batches == 0:
+            batches = self.get_next_batches(
+                batch,
+                min(self.trainer.accumulate_grad_batches, self.trainer.num_training_batches - batch_idx)
+            )
+            num_tokens_in_batch = sum([
+                x['labels'].ne(self.config.ignore_index).sum() for x in batches
+            ])
+            self._num_tokens_in_batch = self.trainer.strategy.reduce(
+                num_tokens_in_batch.to(self.device),
+                reduce_op='sum'
+            )
+        return self._num_tokens_in_batch
+    
+    def on_train_epoch_start(self) -> None:
+        fit_loop = self.trainer.fit_loop
+        if not isinstance(fit_loop._data_fetcher, DataFetcherProxy):
+            fit_loop._data_fetcher = DataFetcherProxy(fit_loop._data_fetcher)
+        self.data_fetcher = fit_loop._data_fetcher
+
+    def training_step(self, batch: "_Batch", batch_idx: int) -> torch.Tensor:
         labels = shift_labels(batch['labels'], self.config.ignore_index)
         
         if self.config.neftune_alpha is not None:
@@ -142,7 +187,7 @@ class CLM(BaseLightningModule):
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
-            position_ids=batch.get('position_ids', None)
+            position_ids=batch['position_ids']
         )
         logits = outputs.logits.float()
 
@@ -150,14 +195,22 @@ class CLM(BaseLightningModule):
             self.log('NEFTune Alpha', self.config.neftune_alpha)
             self._current_attention_mask = None
         
-        loss = self.compute_loss(logits, labels)
+        loss = self.compute_loss(logits, labels, self.get_num_tokens_in_batch(batch, batch_idx))
 
-        self.log('loss', loss, prog_bar=True, logger=False)
-        self.log('Loss/Train/Step', loss)
+        self.loss_metric.update(loss)
+        epoch_loop = self.trainer.fit_loop.epoch_loop
+        if (
+            epoch_loop._accumulated_batches_reached()
+            or epoch_loop._num_ready_batches_reached()
+        ):
+            reduced_loss = self.loss_metric.compute()
+            self.loss_metric.reset()
+            self.log('loss', reduced_loss, prog_bar=True, logger=False)
+            self.log('Loss/Train/Step', reduced_loss)
 
-        if self.config.log_perplexity:
-            self.train_perplexity(loss)
-            self.log('Perplexity/Train/Step', self.train_perplexity)
+            if self.config.log_perplexity:
+                self.train_perplexity(reduced_loss)
+                self.log('Perplexity/Train/Step', self.train_perplexity)
 
         self.consumed_samples.update(labels)
         self.consumed_tokens.update(labels)
@@ -167,7 +220,7 @@ class CLM(BaseLightningModule):
         })
         return loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor | Any], batch_idx: int, dataloader_idx: int = 0):
+    def validation_step(self, batch: "_Batch", batch_idx: int, dataloader_idx: int = 0):
         batch_size = batch['input_ids'].size(0)
         labels = shift_labels(batch['labels'], self.config.ignore_index)
         outputs = self.model(
@@ -186,3 +239,10 @@ class CLM(BaseLightningModule):
 
     def get_model(self) -> BaseModel:
         return self.model
+
+
+class _Batch(TypedDict):
+    input_ids: torch.Tensor
+    attention_mask: torch.Tensor
+    position_ids: torch.Tensor
+    labels: torch.Tensor
