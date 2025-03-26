@@ -373,7 +373,7 @@ def prepare_4d_causal_attention_mask(
 
 
 def get_max_seqlen_in_batch(attention_mask: torch.Tensor):
-    max_num = torch.max(attention_mask)
+    max_num = torch.max(attention_mask).to(dtype=torch.int32)
     # attention_mask: B x N
     counts = []
     for i in range(1, max_num + 1):
@@ -391,7 +391,7 @@ def _get_unpad_data(attention_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.T
 
     Arguments:
         attention_mask (`torch.Tensor`):
-            Boolean or int tensor of shape (batch_size, sequence_length), 1 means valid and 0 means not valid.
+            Boolean or int tensor of shape (batch_size, sequence_length), 0 means not valid and non-zero means valid.
 
     Return:
         indices (`torch.Tensor`):
