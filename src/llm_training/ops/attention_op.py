@@ -373,7 +373,8 @@ def prepare_4d_causal_attention_mask(
 
 
 def get_max_seqlen_in_batch(attention_mask: torch.Tensor):
-    max_num = torch.max(attention_mask).to(dtype=torch.int32)
+    attention_mask = attention_mask.to(dtype=torch.int32)
+    max_num = torch.max(attention_mask)
     # attention_mask: B x N
     counts = []
     for i in range(1, max_num + 1):
