@@ -29,10 +29,10 @@ class TrainingTimeEstimator(Callback):
         self.end_time = 0
 
     def setup(self, trainer: Trainer, pl_module: LightningModule, stage: str) -> None:
+        trainer.limit_val_batches = 0
+        trainer.accumulate_grad_batches = 1
+
         if not self.enable_checkpointing:
-            if trainer.is_global_zero:
-                logger.info('Disabling checkpointing')
-            
             trainer.callbacks = [c for c in trainer.callbacks if not isinstance(c, Checkpoint)]
 
     def print_estimated_training_time(self) -> None:
