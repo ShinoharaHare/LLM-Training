@@ -64,13 +64,15 @@ class LightningCLI(_LightningCLI):
     def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
         parser.add_argument('--float32-matmul-precision', type=str | None, choices=['medium', 'high', 'highest'], default=None)
         parser.add_argument('--logging-level', type=str | int, default=logging.INFO)
+        parser.add_argument('--env', type=dict | None, default=None)
         parser.add_lightning_class_args(OutputRedirection, 'output_redirection')
         parser.add_lightning_class_args(TQDMProgressBar, 'tqdm_progress')
 
     def _instantiate_extra_config(self) -> ExtraConfig:
         return ExtraConfig(
             float32_matmul_precision=self._get(self.config, 'float32_matmul_precision'),
-            logging_level=self._get(self.config, 'logging_level')
+            logging_level=self._get(self.config, 'logging_level'),
+            env=self._get(self.config, 'env')
         )
 
     def _instantiate_trainer(self, config, callbacks):
