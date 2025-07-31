@@ -178,6 +178,10 @@ class CLM(BaseLightningModule):
         logits = outputs.logits.float()
 
         loss = self.compute_loss(logits, labels)
+
+        if isinstance(loss, DTensor):
+            loss = loss.full_tensor()
+        
         self.log('Loss/Val', loss, batch_size=batch_size, sync_dist=True)
 
         if self.config.log_perplexity:

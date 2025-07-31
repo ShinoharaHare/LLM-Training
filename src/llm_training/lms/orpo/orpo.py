@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+import torch.distributed.nn.functional as DF
 from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.parallel import loss_parallel
 
@@ -80,7 +81,7 @@ class ORPO(BaseLightningModule):
             per_token_logps = local_logps.gather(2, local_index).squeeze(2)
             per_token_logps[~local_label_mask] = 0.0
 
-            torch.distributed.all_reduce(
+            per_token_logps = DF.all_reduce(
                 per_token_logps,
                 op=torch.distributed.ReduceOp.SUM,
                 group=logits.device_mesh.get_group()
@@ -233,6 +234,11 @@ class ORPO(BaseLightningModule):
             metrics=metrics
         )
         metrics['Loss'] = loss
+
+        for k, v in metrics.items():
+            if isinstance(v, DTensor):
+                metrics[k] = v.full_tensor()
+        
         metrics = self.add_suffix_to_metrics(metrics, '/Val')
         self.log_dict(metrics, sync_dist=True, batch_size=batch_size)
 
