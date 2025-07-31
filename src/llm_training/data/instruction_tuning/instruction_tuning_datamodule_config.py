@@ -29,6 +29,7 @@ class InstructionTuningDataModuleConfig(HFBasedDataModuleConfig):
     overlong_handling_method: OverlongHandlingMethod | str = OverlongHandlingMethod.DROP
     packing_method: PackingMethod | str = PackingMethod.NO_PACKING
     pad_to_multiple_of: int | None = None
+    pad_to_max_length: bool = False
     add_default_system_prompt_rate: float | None = None
     default_system_prompt: str | None = None
 

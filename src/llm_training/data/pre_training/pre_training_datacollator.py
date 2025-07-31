@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 import torch
@@ -19,9 +20,10 @@ class PreTrainingDataCollator(BaseDataCollator):
         assert 'pad_token' in config.tokenizer.special_tokens_map, '`pad_token` is not specified. Please set it manually.'
     
     def _pad_to_longest(self, x: list[list[int]]) -> list[list[int]]:
-        n = max(len(y) for y in x)
+        n = self.config.max_length if self.config.pad_to_max_length else max(len(y) for y in batch)
+
         if self.config.pad_to_multiple_of is not None:
-            n = ((n // self.config.pad_to_multiple_of) + 1) * self.config.pad_to_multiple_of
+            n = (math.ceil(n / self.config.pad_to_multiple_of)) * self.config.pad_to_multiple_of
         
         for y in x:
             num_paddings = n - len(y)

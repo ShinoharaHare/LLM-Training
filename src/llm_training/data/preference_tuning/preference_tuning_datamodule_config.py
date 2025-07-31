@@ -22,6 +22,7 @@ class PreferenceTuningDataModuleConfig(HFBasedDataModuleConfig):
     max_length: int | None = None
     overlong_handling_method: OverlongHandlingMethod | str = OverlongHandlingMethod.DROP
     pad_to_multiple_of: int | None = None
+    pad_to_max_length: bool = False
 
     @field_validator('chat_template')
     @classmethod

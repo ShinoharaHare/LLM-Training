@@ -1,7 +1,7 @@
+import math
 from typing import Any, TypeVar
 
 import torch
-
 from llm_training.data.base_datacollator import BaseDataCollator
 
 from .preference_tuning_datamodule_config import \
@@ -19,9 +19,10 @@ class PreferenceTuningDataCollator(BaseDataCollator):
             '`pad_token` is not specified. Please set it manually.'
 
     def _pad_to_longest(self, batch: list[list[T]], padding_value: T) -> list[list[T]]:
-        n = max(len(y) for y in batch)
+        n = self.config.max_length if self.config.pad_to_max_length else max(len(y) for y in batch)
+
         if self.config.pad_to_multiple_of is not None:
-            n = ((n // self.config.pad_to_multiple_of) + 1) * self.config.pad_to_multiple_of
+            n = (math.ceil(n / self.config.pad_to_multiple_of)) * self.config.pad_to_multiple_of
         
         new_batch = []
         for x in batch:

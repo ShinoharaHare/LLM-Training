@@ -21,6 +21,7 @@ class PreTrainingDataModuleConfig(HFBasedDataModuleConfig):
     sample_rate: dict[str, float] = Field(default_factory=dict)
     pre_processing_batch_size: int = 1000
     pad_to_multiple_of: int | None = None
+    pad_to_max_length: bool = False
 
     @field_validator('packing_method')
     @classmethod
